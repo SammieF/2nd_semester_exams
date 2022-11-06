@@ -1,0 +1,101 @@
+---
+- name: Install laravel and it's dependencies to the client node
+  hosts: webservers
+  become: yes
+  vars:
+    host_name: laravel
+  tasks:
+     - name: Install the following packages to the client node
+       ansible.builtin.package:
+          name:
+            - git
+            - wget
+            - curl
+            - unzip
+            - php-curl
+            - php8.1-mysql
+            - php-xml
+          update-cache: yes
+          state: latest
+     - name: Download composer installer
+       ansible.builtin.get_url:
+           url: https://getcomposer.org/installer
+           dest: /usr/src/
+     - name: Download and install composer
+       shell: curl -sS https://getcomposer.org/installer | php
+       args:
+         chdir: /usr/src/
+         creates: /usr/local/bin/composer
+         warn: false
+     - name: Add composer to global path
+       copy:
+         dest: /usr/local/bin/composer
+         group: root
+         mode: '0755'
+         owner: root
+         src: /usr/src/composer.phar
+         remote_src: yes
+     - name: Make a directory in /var/www path
+       ansible.builtin.file:
+          path: /var/www/{{ host_name }}
+          state: directory
+          mode: '0775'
+#     - name: Clone Laravel app to client node
+ #      git:
+  #       repo: https://github.com/f1amy/laravel-realworld-example-app.git
+   #      dest: /var/www/{{ host_name }}
+     - name: change ownership permission
+       ansible.builtin.file:
+         path:  /var/www/{{ host_name }}
+         state: directory
+         recurse: yes
+         owner: www-data
+         group: www-data
+     - name: set permission for user
+       ansible.builtin.file:
+         path: /var/www/{{ host_name }}
+         state: directory
+         recurse: yes
+         mode: '0775'
+     - name: set permission for storage
+       ansible.builtin.file:
+         path: /var/www/{{ host_name }}/storage
+         state: directory
+         recurse: yes
+         mode: '0775'
+     - name: set permission for bootstrap/
+       ansible.builtin.file:
+         path: /var/www/{{ host_name }}/bootstrap/cache
+         state: directory
+         recurse: yes
+         mode: '0775'
+     - name: Copy env file
+       copy:
+         src: /home/akinkunmi/.env
+         dest: /var/www/{{ host_name }}
+     - name: Remove the web.php inside routes dir
+       shell: sudo rm -rf /var/www/{{ host_name }}/routes/web.php
+     - name: Copy web.php to routes dir
+       template:
+          src: /home/akinkunmi/web.php
+          dest: /var/www/{{ host_name }}/routes/
+     - name: Install laravel dependencies with composer install
+       become: false
+       community.general.composer:
+         command: update
+         global_command: false
+         working_dir: /var/www/{{ host_name }}
+     - name: Update the laravel project using composer update
+       become: false
+       community.general.composer:
+         command: install
+         working_dir: /var/www/{{ host_name }}/
+         global_command: false
+     - name: Generate the project key
+       ansible.builtin.shell: |
+         cd /var/www/{{ host_name }}/
+         php artisan key:generate
+     - name: migrate database
+       ansible.builtin.shell: |
+         cd /var/www/{{ host_name }}/
+         sudo php /var/www/{{ host_name }}/ artisan migrate --seed
